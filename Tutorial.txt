@@ -1,0 +1,393 @@
+Guia Enciclopédico Completo do Funtoo Linux (UEFI + GPT)
+========================================================
+
+Este guia descreve o processo completo de instalação, configuração e pós-instalação do Funtoo Linux em sistemas modernos com UEFI + GPT.
+Todos os comandos são apresentados em inglês, enquanto as explicações estão em português.
+
+--------------------------------------------------------
+1. Preparação Inicial
+--------------------------------------------------------
+
+Download da Stage3:
+wget https://www.funtoo.org/Download
+# Abre a página de downloads do Funtoo para obter a Stage3 mais recente.
+
+Criar pendrive bootável:
+dd if=funtoo.iso of=/dev/sdX bs=4M status=progress
+# Cria um pendrive bootável a partir da ISO do Funtoo. Substitua /dev/sdX pelo seu pendrive real.
+
+Dar boot no pendrive no modo UEFI e acessar o shell de instalação.
+
+--------------------------------------------------------
+2. Configuração da Rede
+--------------------------------------------------------
+
+Testar conexão:
+ping -c 3 google.com
+# Verifica se há conexão com a internet enviando 3 pacotes ao Google.
+
+Listar interfaces de rede:
+ip link
+# Mostra todas as interfaces de rede disponíveis (ex: eth0, enp3s0, wlan0).
+
+Configurar DHCP automaticamente:
+dhcpcd <interface>
+# Configura a interface de rede especificada para obter IP via DHCP.
+
+--------------------------------------------------------
+3. Particionamento do Disco (UEFI + GPT)
+--------------------------------------------------------
+
+Abrir utilitário de particionamento GPT:
+gdisk /dev/sda
+# Inicia o gdisk no disco /dev/sda (ou /dev/nvme0n1 em SSDs NVMe).
+
+Criar partições:
+- EFI System Partition (ESP): 512MB, tipo EF00
+- Swap: 2-8GB, tipo 8200
+- Root (/): restante do disco, tipo 8300
+
+Formatar partições:
+mkfs.vfat -F32 /dev/sda1
+# Formata a partição EFI em FAT32.
+
+mkswap /dev/sda2
+# Cria o espaço de swap.
+
+mkfs.ext4 /dev/sda3
+# Formata a partição root em ext4.
+
+Ativar swap:
+swapon /dev/sda2
+# Ativa a partição de swap.
+
+--------------------------------------------------------
+4. Montagem do Sistema de Arquivos
+--------------------------------------------------------
+
+mount /dev/sda3 /mnt/funtoo
+# Monta a partição root.
+
+mkdir -p /mnt/funtoo/boot
+# Cria o diretório boot dentro do sistema.
+
+mount /dev/sda1 /mnt/funtoo/boot
+# Monta a partição EFI no /boot.
+
+--------------------------------------------------------
+5. Instalação da Stage3
+--------------------------------------------------------
+
+cd /mnt/funtoo
+# Acessa o diretório onde o sistema será instalado.
+
+wget https://build.funtoo.org/next/x86-64bit/generic_64/stage3-latest.tar.xz
+# Baixa a Stage3 mais recente.
+
+tar xpf stage3-latest.tar.xz --xattrs-include='*.*' --numeric-owner
+# Extrai a Stage3 preservando permissões e atributos.
+
+--------------------------------------------------------
+6. Chroot no Novo Sistema
+--------------------------------------------------------
+
+mount -t proc /proc /mnt/funtoo/proc
+mount --rbind /sys /mnt/funtoo/sys
+mount --make-rslave /mnt/funtoo/sys
+mount --rbind /dev /mnt/funtoo/dev
+mount --make-rslave /mnt/funtoo/dev
+# Monta os sistemas virtuais necessários.
+
+chroot /mnt/funtoo /bin/bash
+# Entra no novo sistema.
+
+source /etc/profile
+export PS1="(chroot) $PS1"
+# Ajusta o ambiente do chroot.
+
+--------------------------------------------------------
+7. Configurações Básicas
+--------------------------------------------------------
+
+Definir senha root:
+passwd
+# Define a senha do superusuário.
+
+Configurar fuso horário:
+ln -sf /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime
+# Define o timezone para São Paulo.
+
+Configurar hostname:
+echo "funtoo" > /etc/hostname
+# Define o nome do host do sistema.
+
+Editar /etc/hosts:
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   funtoo.localdomain funtoo
+# Mapeia o hostname para IPs locais.
+
+--------------------------------------------------------
+8. Kernel
+--------------------------------------------------------
+
+Instalar kernel Debian-Sources (recomendado):
+emerge debian-sources
+ego boot update
+# Instala o kernel estável baseado no Debian e atualiza a configuração de boot.
+
+Ou instalar kernel customizado:
+emerge sys-kernel/gentoo-sources genkernel
+genkernel all
+# Instala as fontes do kernel Gentoo e compila automaticamente.
+
+--------------------------------------------------------
+9. Ferramentas Essenciais
+--------------------------------------------------------
+
+emerge dhcpcd networkmanager vim
+# Instala utilitários básicos: cliente DHCP, NetworkManager e editor Vim.
+
+rc-update add dhcpcd default
+rc-update add NetworkManager default
+# Configura serviços de rede para iniciar no boot.
+
+--------------------------------------------------------
+10. Bootloader (GRUB UEFI)
+--------------------------------------------------------
+
+Instalar grub e efibootmgr:
+emerge grub efibootmgr
+
+Instalar no modo UEFI:
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=Funtoo
+grub-mkconfig -o /boot/grub/grub.cfg
+# Configura o GRUB como bootloader UEFI.
+
+--------------------------------------------------------
+11. Finalização
+--------------------------------------------------------
+
+exit
+umount -R /mnt/funtoo
+swapoff -a
+reboot
+# Sai do chroot, desmonta partições, desativa swap e reinicia o sistema.
+
+--------------------------------------------------------
+12. Pós-Instalação
+--------------------------------------------------------
+
+Criar usuário:
+useradd -m -G wheel,audio,video -s /bin/bash usuario
+passwd usuario
+# Cria usuário normal com permissões de áudio e vídeo.
+
+Instalar e configurar sudo:
+emerge sudo
+visudo
+# Instala sudo e edita o arquivo de configuração.
+
+Adicionar no sudoers:
+%wheel ALL=(ALL:ALL) ALL
+# Dá permissão de sudo aos usuários do grupo wheel.
+
+Configurar locale:
+nano /etc/locale.gen
+# Edite e descomente:
+pt_BR.UTF-8 UTF-8
+en_US.UTF-8 UTF-8
+
+locale-gen
+# Gera os locales.
+
+echo 'LANG="pt_BR.UTF-8"' > /etc/env.d/02locale
+env-update && source /etc/profile
+# Define idioma do sistema.
+
+--------------------------------------------------------
+13. Interface Gráfica
+--------------------------------------------------------
+
+Instalar Xorg:
+emerge xorg-x11
+# Instala o servidor gráfico Xorg.
+
+Instalar drivers de vídeo:
+emerge xf86-video-intel        # Intel
+emerge xf86-video-amdgpu       # AMD
+emerge nvidia-drivers          # Nvidia proprietário
+emerge nouveau                 # Nvidia open-source
+
+Testar X:
+startx
+
+Instalar Desktop Environment:
+
+XFCE:
+emerge xfce4 xfce4-meta lightdm lightdm-gtk-greeter
+rc-update add dbus default
+rc-update add lightdm default
+
+GNOME:
+emerge gnome gdm
+rc-update add dbus default
+rc-update add gdm default
+
+KDE Plasma:
+emerge plasma-meta sddm
+rc-update add dbus default
+rc-update add sddm default
+
+--------------------------------------------------------
+14. Utilitários
+--------------------------------------------------------
+
+emerge firefox thunderbird libreoffice gimp vlc htop neofetch
+# Instala programas úteis para o dia a dia.
+
+--------------------------------------------------------
+15. Manutenção do Sistema
+--------------------------------------------------------
+
+Atualizar repositórios do Funtoo:
+ego sync
+
+Atualizar pacotes do sistema:
+emerge --sync
+emerge --update --deep --newuse @world
+
+Selecionar perfil do sistema:
+eselect profile list
+eselect profile set <numero>
+
+Selecionar versão do Python:
+eselect python list
+eselect python set <numero>
+
+Selecionar versão do GCC:
+gcc-config -l
+gcc-config <numero>
+source /etc/profile
+
+Limpar dependências órfãs:
+emerge --depclean
+
+Recompilar pacotes quebrados:
+revdep-rebuild
+
+--------------------------------------------------------
+16. Ego (Gerenciador do Funtoo)
+--------------------------------------------------------
+
+Ver versão do ego:
+ego --version
+
+Sincronizar repositórios:
+ego sync
+
+Listar kits disponíveis:
+ego kit list
+
+Ver detalhes de um kit:
+ego kit show xorg-kit
+
+Alterar branch de um kit:
+ego kit select xorg-kit 1.20-prime
+
+Ver perfil atual do sistema:
+ego profile show
+
+Listar todos os perfis:
+ego profile list
+
+Selecionar novo perfil:
+ego profile set desktop
+
+Ver status do sistema:
+ego query
+
+--------------------------------------------------------
+17. Emerge (Portage no Funtoo)
+--------------------------------------------------------
+
+Instalar um pacote:
+emerge nano
+
+Reinstalar um pacote:
+emerge --ask --verbose --oneshot nano
+
+Remover pacote:
+emerge --deselect nano
+emerge --depclean
+
+Pesquisar pacotes:
+emerge --search firefox
+
+Atualizar sistema inteiro:
+emerge --sync
+emerge --update --deep --newuse @world
+
+--------------------------------------------------------
+18. Uso de USE Flags
+--------------------------------------------------------
+
+Exemplo: instalar o Firefox com suporte a pulseaudio.
+
+nano /etc/portage/make.conf
+# Adicione ou edite:
+USE="pulseaudio"
+
+Recompilar pacotes com novas USE flags:
+emerge --update --deep --newuse @world
+
+Ver as USE flags de um pacote específico:
+equery uses firefox
+
+Ativar/desativar USE flags específicas:
+nano /etc/portage/package.use
+www-client/firefox pulseaudio -systemd
+
+--------------------------------------------------------
+19. Manutenção e Troubleshooting
+--------------------------------------------------------
+
+Ver pacotes órfãos:
+emerge --depclean -p
+
+Recompilar pacotes quebrados:
+revdep-rebuild
+
+Gerenciar serviços:
+rc-update add sshd default
+rc-service sshd start
+
+Ver logs do sistema:
+dmesg | less
+less /var/log/messages
+
+Ver pacotes instalados:
+equery list '*'
+
+Ver dependências de um pacote:
+equery depgraph firefox
+
+--------------------------------------------------------
+20. Extras
+--------------------------------------------------------
+
+Ver informações do hardware:
+lscpu
+lsblk
+lspci
+lsusb
+
+Monitorar uso do sistema:
+htop
+
+Exibir informações do sistema:
+neofetch
+
+--------------------------------------------------------
+Fim do Guia Avançado do Funtoo Linux (UEFI + GPT)
+========================================================
